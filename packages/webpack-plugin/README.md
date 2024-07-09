@@ -52,7 +52,7 @@ const config = (env, argv) => ({
       classNamePrefix: 'x',
       // Required for CSS variable support
       unstable_moduleResolution: {
-        // type: 'commonJS' | 'haste'
+        // type: 'commonJS' | 'esm' | 'haste'
         // default: 'commonJS'
         type: 'commonJS',
         // The absolute path to the root directory of your project

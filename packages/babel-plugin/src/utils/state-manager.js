@@ -21,6 +21,7 @@ import * as z from './validate';
 import { addDefault, addNamed } from '@babel/helper-module-imports';
 import type { ImportOptions } from '@babel/helper-module-imports';
 import * as pathUtils from '../babel-path-utils';
+import { buildResolver } from 'esm-resolve';
 
 type ImportAdditionOptions = Omit<
   Partial<ImportOptions>,
@@ -43,6 +44,11 @@ type ModuleResolution =
     }>
   | $ReadOnly<{
       type: 'experimental_crossFileParsing',
+      rootDir: string,
+      themeFileExtension?: ?string,
+    }>
+  | $ReadOnly<{
+      type: 'esm',
       rootDir: string,
       themeFileExtension?: ?string,
     }>;
@@ -486,6 +492,24 @@ export default class StateManager {
           ? ['themeNameRef', path.relative(rootDir, resolvedFilePath)]
           : false;
       }
+      case 'esm': {
+        const rootDir = this.options.unstable_moduleResolution.rootDir;
+        const aliases = this.options.aliases;
+        const themeFileExtension =
+          this.options.unstable_moduleResolution?.themeFileExtension ??
+          '.stylex';
+        if (!matchesFileSuffix(themeFileExtension)(importPath)) {
+          return false;
+        }
+        const resolvedFilePath = esmFilePathResolver(
+          importPath,
+          sourceFilePath,
+          aliases,
+        );
+        return resolvedFilePath
+          ? ['themeNameRef', path.relative(rootDir, resolvedFilePath)]
+          : false;
+      }
       case 'haste': {
         const themeFileExtension =
           this.options.unstable_moduleResolution.themeFileExtension ??
@@ -639,6 +663,45 @@ const filePathResolver = (
           paths: [path.dirname(sourceFilePath)],
         });
       } catch {}
+    }
+  }
+  // Failed to resolve the file path
+  return null;
+};
+
+const esmFilePathResolver = (
+  relativeFilePath: string,
+  sourceFilePath: string,
+  aliases: StyleXStateOptions['aliases'],
+): ?string => {
+  const esmResolve = buildResolver(sourceFilePath);
+
+  // Try importing without adding any extension
+  // and then every supported extension
+  for (const ext of ['', ...EXTENSIONS]) {
+    const importPathStr = relativeFilePath + ext;
+
+    // Try to resolve relative paths as is
+    if (importPathStr.startsWith('.')) {
+      const resolved = esmResolve(importPathStr, {
+        allowImportingExtraExtensions: true,
+      });
+
+      if (resolved) {
+        return resolved;
+      }
+    }
+
+    // Otherwise, try to resolve the path with aliases
+    const allAliases = possibleAliasedPaths(importPathStr, aliases);
+    for (const possiblePath of allAliases) {
+      const resolved = esmResolve(possiblePath, {
+        allowImportingExtraExtensions: true,
+      });
+
+      if (resolved) {
+        return resolved;
+      }
     }
   }
   // Failed to resolve the file path
